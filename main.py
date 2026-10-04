@@ -9,7 +9,7 @@ WELCOME_MESSAGE = os.getenv("WELCOME_MESSAGE", "Привіт!")
 
 logging.basicConfig(level=logging.INFO)
 
-# Словник для збереження зв'язку: message_id в групі → user_id
+# Зберігаємо зв'язок message_id → user_id
 user_mapping = {}
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -17,35 +17,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
-    # Пересилаємо повідомлення в групу
+    # Просто пересилаємо повідомлення (як в Livegram)
     forwarded = await update.message.forward(chat_id=SUPPORT_CHAT_ID)
-    
-    # Зберігаємо зв'язок
+    # Запам'ятовуємо хто написав
     user_mapping[forwarded.message_id] = user.id
-    
-    # Додатково відправляємо інформацію про користувача (на випадок)
-    await context.bot.send_message(
-        chat_id=SUPPORT_CHAT_ID,
-        text=f"👤 Від: {user.full_name} (ID: {user.id})",
-        reply_to_message_id=forwarded.message_id
-    )
 
 async def reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not update.message.reply_to_message:
         return
-    
-    replied_msg = update.message.reply_to_message
-    
-    # Шукаємо user_id
-    user_id = user_mapping.get(replied_msg.message_id)
-    
+
+    replied_id = update.message.reply_to_message.message_id
+    user_id = user_mapping.get(replied_id)
+
+    # Запасний варіант через forward
     if not user_id:
-        # Спробуємо знайти через forward
-        if replied_msg.forward_from:
-            user_id = replied_msg.forward_from.id
-        elif replied_msg.forward_origin and hasattr(replied_msg.forward_origin, "sender_user"):
-            user_id = replied_msg.forward_origin.sender_user.id
-    
+        msg = update.message.reply_to_message
+        if msg.forward_from:
+            user_id = msg.forward_from.id
+        elif getattr(msg, "forward_origin", None) and hasattr(msg.forward_origin, "sender_user"):
+            user_id = msg.forward_origin.sender_user.id
+
     if user_id:
         try:
             await context.bot.copy_message(
@@ -54,9 +45,9 @@ async def reply_to_user(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 message_id=update.message.message_id
             )
         except Exception as e:
-            await update.message.reply_text(f"Не вдалося відправити: {e}")
+            await update.message.reply_text(f"Помилка відправки: {e}")
     else:
-        await update.message.reply_text("Не можу визначити користувача. Спробуйте відповісти на повідомлення з ID.")
+        await update.message.reply_text("Не вдалося визначити користувача. Відповідайте саме на переслане повідомлення.")
 
 def main():
     app = Application.builder().token(TOKEN).build()
